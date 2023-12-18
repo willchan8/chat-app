@@ -1,11 +1,13 @@
-import { useState, useRef, ChangeEvent } from "react";
+import { lazy, Suspense } from "react";
+import Spinner from "./component/Spinner";
 import "./App.css";
 import firebase from "firebase/compat/app";
 import "firebase/compat/firestore";
 import "firebase/compat/auth";
 
 import { useAuthState } from "react-firebase-hooks/auth";
-import { useCollectionData } from "react-firebase-hooks/firestore";
+
+const ChatRoom = lazy(() => import("./component/ChatRoom"));
 
 const firebaseConfig = {
 	apiKey: import.meta.env.VITE_API_KEY,
@@ -21,10 +23,9 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 
 const auth = firebase.auth();
-const firestore = firebase.firestore();
 
 function App() {
-	const [user] = useAuthState(auth as any);
+	const [user, loading] = useAuthState(auth as any);
 
 	return (
 		<div className="App">
@@ -32,7 +33,15 @@ function App() {
 				<h1>Chat App 💬</h1>
 				<SignOut />
 			</header>
-			<section>{user ? <ChatRoom /> : <SignIn />}</section>
+			<section>
+				{!user && loading && <Spinner />}
+				{user && !loading && (
+					<Suspense fallback={<Spinner />}>
+						<ChatRoom />
+					</Suspense>
+				)}
+				{!user && !loading && <SignIn />}
+			</section>
 		</div>
 	);
 }
@@ -40,7 +49,7 @@ function App() {
 function SignIn() {
 	const signInWithGoogle = () => {
 		const provider = new firebase.auth.GoogleAuthProvider();
-		auth.signInWithPopup(provider);
+		auth.signInWithRedirect(provider);
 	};
 
 	return (
@@ -52,68 +61,6 @@ function SignIn() {
 
 function SignOut() {
 	return auth.currentUser && <button onClick={() => auth.signOut()}>Sign Out</button>;
-}
-
-function ChatRoom() {
-	const scrollRef = useRef<HTMLDivElement>(null);
-
-	const messagesRef = firestore.collection("messages");
-	const query = messagesRef.orderBy("createdAt").limit(25);
-
-	// @ts-ignore
-	const [messages] = useCollectionData(query, { idField: "id" });
-
-	const [formValue, setFormValue] = useState("");
-
-	const sendMessage = async (e: React.SyntheticEvent) => {
-		e.preventDefault();
-
-		const { uid, photoURL } = auth.currentUser!;
-
-		await messagesRef.add({
-			text: formValue,
-			createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-			uid,
-			photoURL
-		});
-
-		setFormValue("");
-
-		if (scrollRef.current) {
-			scrollRef.current.scrollIntoView({ behavior: "smooth" });
-		}
-	};
-
-	const handleChange = (e: ChangeEvent<HTMLInputElement>): void => {
-		setFormValue(e.target.value);
-	};
-
-	return (
-		<>
-			<main>
-				{messages && messages.map((msg, i) => <ChatMessage key={`${msg.uid}_${i}`} message={msg} />)}
-				<div ref={scrollRef}></div>
-			</main>
-
-			<form onSubmit={sendMessage}>
-				<input value={formValue} onChange={handleChange} />
-				<button type="submit">Send ➡️</button>
-			</form>
-		</>
-	);
-}
-
-function ChatMessage({ message }: { message: any }) {
-	const { text, uid, photoURL } = message;
-
-	const messageClass = uid === auth?.currentUser?.uid ? "sent" : "received";
-
-	return (
-		<div className={`message ${messageClass}`}>
-			<img src={photoURL} />
-			<p>{text}</p>
-		</div>
-	);
 }
 
 export default App;
